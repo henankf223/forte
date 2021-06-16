@@ -615,8 +615,8 @@ std::tuple<psi::SharedMatrix, psi::SharedMatrix> Psi4Integrals::make_fock_active
         print_h1("Warning from Forte Fock build (active)");
         outfile->Printf("\n  Unequivalent alpha and beta 1RDMs.");
         outfile->Printf("\n  Largest difference between alpha and beta: %.15f", diff_max);
-        outfile->Printf("\n  Use unrestricted formalism to build Fock martix!\n");
-        rdm_eq_spin = false;
+//        outfile->Printf("\n  Use unrestricted formalism to build Fock martix!\n");
+//        rdm_eq_spin = false;
     }
 
     // general setup
