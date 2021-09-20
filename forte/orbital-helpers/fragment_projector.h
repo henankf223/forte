@@ -59,6 +59,9 @@ class FragmentProjector {
     // Build projector and return AO basis matrix Pf_AO
     psi::SharedMatrix build_f_projector(std::shared_ptr<psi::BasisSet> basis);
 
+    // Build distance metric using weighted overlap
+    void build_auto_projector(psi::SharedMatrix F_w);
+
     /// Return number of system (fragment) basis functions
     int get_nbf_A() { return nbf_A_; }
 

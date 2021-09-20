@@ -71,6 +71,10 @@ std::pair<psi::SharedMatrix, int> make_fragment_projector(SharedWavefunction wfn
 
     // Compute and return the projector matrix
     psi::SharedMatrix Pf = FP.build_f_projector(prime_basis);
+
+    // Test S
+    FP.build_auto_projector(wfn->Fa());
+
     int nbfA = FP.get_nbf_A();
     std::pair<psi::SharedMatrix, int> Projector = std::make_pair(Pf, nbfA);
 
@@ -120,13 +124,13 @@ SharedMatrix FragmentProjector::build_f_projector(std::shared_ptr<psi::BasisSet>
 
     std::shared_ptr<IntegralFactory> integral_pp(new IntegralFactory(basis, basis, basis, basis));
     std::shared_ptr<OneBodyAOInt> S_int(integral_pp->ao_overlap());
-    SharedMatrix S_nn = std::make_shared<psi::Matrix>("S_nn", nbf_, nbf_);
-    S_int->compute(S_nn);
+    S_ = std::make_shared<psi::Matrix>("S_nn", nbf_, nbf_);
+    S_int->compute(S_);
 
     Slice fragA(A_begin, A_end);
 
     // Construct the system portion of S (S_A)
-    SharedMatrix S_A = S_nn->get_block(fragA, fragA);
+    SharedMatrix S_A = S_->get_block(fragA, fragA);
 
     // Construct S_A^-1 and store it in a matrix of size nbf x nbf
     S_A->general_invert();
@@ -134,9 +138,108 @@ SharedMatrix FragmentProjector::build_f_projector(std::shared_ptr<psi::BasisSet>
     S_A_nn->set_block(fragA, fragA, S_A);
 
     // Evaluate AO basis projector  P = S^T (S_A)^{-1} S
-    S_A_nn->transform(S_nn);
+    S_A_nn->transform(S_);
 
     return S_A_nn;
+}
+
+void FragmentProjector::build_auto_projector(SharedMatrix F_w) {
+    outfile->Printf("\n  Computing full overlap distances from S: \n");
+    std::vector<int> window_list;
+    int atom_window_count = 0;
+    int atom_idx = 0;
+    for (int ka = 0; ka < nbf_; ka++) {
+        int A = basis_->function_to_center(ka);
+        if (A == atom_idx) {
+            atom_window_count += 1;
+        }
+        else {
+            window_list.push_back(atom_window_count);
+            atom_idx += 1;
+            atom_window_count = 1;
+        }
+    }
+    window_list.push_back(atom_window_count);
+
+    outfile->Printf("\n  The atom windows are: \n");
+    atom_idx = 0;
+    for (auto val : window_list) {
+        outfile->Printf("\n Atom %d have %d AO on it.", atom_idx, val);
+        atom_idx += 1;
+    }
+    outfile->Printf("\n");
+
+    std::vector<int> zeropi(1, 0);
+    Dimension S1_begin(zeropi);
+    Dimension S1_end(zeropi);
+    Dimension S2_begin(zeropi);
+    Dimension S2_end(zeropi);
+
+    int atom_idx_1 = 0;
+    int atom_idx_2 = 0;
+
+    int cum1 = 0;
+    int cum2 = 0;
+
+    for (auto val1 : window_list) {
+        S1_begin[0] = cum1;
+        S1_end[0] = cum1 + val1;
+        Slice S1(S1_begin, S1_end);
+        for (auto val2 : window_list) {
+            S2_begin[0] = cum2;
+            S2_end[0] = cum2 + val2;
+            Slice S2(S2_begin, S2_end);
+
+            SharedMatrix S_12 = S_->get_block(S1, S2);
+            double Dist = S_12->trace();
+            outfile->Printf("\n  The trace distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist);
+            double Dist_avg = Dist / std::min(val1, val2);
+            outfile->Printf("\n  The average trace distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_avg);
+            double Dist_sum_sq = S_12->sum_of_squares();
+            outfile->Printf("\n  The SSQ distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_sum_sq);
+            double Dist_sum_sq_avg = Dist_sum_sq/(val1 * val2);
+            outfile->Printf("\n  The size-weighted SSQ distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_sum_sq_avg);
+
+            // Experiments of other metrics
+            //outfile->Printf("\n  The S_AB block between atom %d and %d is: \n", atom_idx_1, atom_idx_2);
+            //S_12->print();
+
+            //int size_reduced;
+            //SharedMatrix S_12_inv = S_12->pseudoinverse(1e-5, size_reduced);
+            //outfile->Printf("\n  The (S_AB)^-1 block between atom %d and %d is: \n", atom_idx_1, atom_idx_2);
+            //S_12_inv->print();
+
+            //SharedMatrix S_12_f(new Matrix("S system in fullsize", nbf_, nbf_));
+            //S_12_f->set_block(S1, S2, S_12_inv);
+            //S_12_f->transform(S_);
+
+            //outfile->Printf("\n  The full overlap between atom %d and %d is: \n", atom_idx_1, atom_idx_2);
+            //S_12_f->print();
+
+            SharedMatrix F_12 = F_w->get_block(S1, S2);
+            F_12->scale(-0.5);
+            S_12->add(F_12);
+
+            double Dist_e = S_12->trace();
+            outfile->Printf("\n  The energy-weighted trace distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_e);
+            double Dist_e_avg = Dist_e / std::min(val1, val2);
+            outfile->Printf("\n  The energy-weighted average trace distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_e_avg);
+            double Dist_e_sum_sq = S_12->sum_of_squares();
+            outfile->Printf("\n  The energy-weighted SSQ distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_e_sum_sq);
+            double Dist_e_sum_sq_avg = Dist_sum_sq/(val1 * val2);
+            outfile->Printf("\n  The energy-weighted size-weighted SSQ distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_e_sum_sq);
+
+            cum2 += val2;
+            atom_idx_2 += 1;
+        }
+        cum1 += val1;
+        cum2 = 0;
+        atom_idx_1 += 1;
+    }
+
+    F_w->print();
+
+    return;
 }
 
 } // namespace forte
