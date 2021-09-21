@@ -29,6 +29,7 @@
 #include <numeric>
 #include <regex>
 #include <vector>
+#include <cmath>
 
 #include "psi4/libmints/vector.h"
 #include "psi4/libmints/matrix.h"
@@ -43,6 +44,7 @@
 #include "base_classes/forte_options.h"
 
 #include "fragment_projector.h"
+#include "clustering.cc"
 
 using namespace psi;
 
@@ -72,8 +74,11 @@ std::pair<psi::SharedMatrix, int> make_fragment_projector(SharedWavefunction wfn
     // Compute and return the projector matrix
     psi::SharedMatrix Pf = FP.build_f_projector(prime_basis);
 
-    // Test S
-    FP.build_auto_projector(wfn->Fa());
+    if (options->get_bool("AUTOFRAG")) {
+        // Apply automatic fragmentation
+        FP.build_auto_projector(wfn->Fa(), options);
+        throw PSIEXCEPTION("The automatic fragmentation implementation is not done :( ...");
+    }
 
     int nbfA = FP.get_nbf_A();
     std::pair<psi::SharedMatrix, int> Projector = std::make_pair(Pf, nbfA);
@@ -143,7 +148,12 @@ SharedMatrix FragmentProjector::build_f_projector(std::shared_ptr<psi::BasisSet>
     return S_A_nn;
 }
 
-void FragmentProjector::build_auto_projector(SharedMatrix F_w) {
+void FragmentProjector::build_auto_projector(SharedMatrix F_w, std::shared_ptr<ForteOptions> options) {
+    auto dist_type = options->get_str("AUTOFRAG_DIST");
+    double F_weight = options->get_double("FOCK_WEIGHT");
+    double M_weight = options->get_double("GEOMETRY_WEIGHT");
+    int num_clusters = options->get_int("N_FRAGMENT");
+
     outfile->Printf("\n  Computing full overlap distances from S: \n");
     std::vector<int> window_list;
     int atom_window_count = 0;
@@ -181,6 +191,12 @@ void FragmentProjector::build_auto_projector(SharedMatrix F_w) {
     int cum1 = 0;
     int cum2 = 0;
 
+    int natom_full = molecule_->natom();
+    SharedMatrix dist_mat(new Matrix("Atomic distance matrix", natom_full, natom_full));
+
+    Graph g_dist(natom_full, natom_full*natom_full);
+    SharedMatrix mol_dist_mat = std::make_shared<psi::Matrix>(molecule_->distance_matrix());
+
     for (auto val1 : window_list) {
         S1_begin[0] = cum1;
         S1_end[0] = cum1 + val1;
@@ -191,14 +207,38 @@ void FragmentProjector::build_auto_projector(SharedMatrix F_w) {
             Slice S2(S2_begin, S2_end);
 
             SharedMatrix S_12 = S_->get_block(S1, S2);
+            SharedMatrix F_12 = F_w->get_block(S1, S2);
+            F_12->scale(F_weight);
+            S_12->add(F_12);
+
+            if (atom_idx_1 == atom_idx_2) {continue; }
+
             double Dist = S_12->trace();
-            outfile->Printf("\n  The trace distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist);
+            Dist += M_weight * (1.0 / mol_dist_mat->get(atom_idx_1, atom_idx_2));
+            if (dist_type == "TR") {
+                outfile->Printf("\n  The trace distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist);
+                dist_mat->set(atom_idx_1, atom_idx_2, Dist);
+                g_dist.addEdge(atom_idx_1, atom_idx_2, 1.0 / abs(Dist));
+            }
             double Dist_avg = Dist / std::min(val1, val2);
-            outfile->Printf("\n  The average trace distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_avg);
+            if (dist_type == "TR_AVG") {
+                outfile->Printf("\n  The average trace distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_avg); 
+                dist_mat->set(atom_idx_1, atom_idx_2, Dist_avg);
+                g_dist.addEdge(atom_idx_1, atom_idx_2, 1.0 / abs(Dist_avg));
+            }
             double Dist_sum_sq = S_12->sum_of_squares();
-            outfile->Printf("\n  The SSQ distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_sum_sq);
+            Dist_sum_sq += M_weight * (1.0 / mol_dist_mat->get(atom_idx_1, atom_idx_2));
+            if (dist_type == "SSQ") {
+                outfile->Printf("\n  The SSQ distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_sum_sq);
+                dist_mat->set(atom_idx_1, atom_idx_2, Dist_sum_sq);
+                g_dist.addEdge(atom_idx_1, atom_idx_2, 1.0 / abs(Dist_sum_sq));
+            }
             double Dist_sum_sq_avg = Dist_sum_sq/(val1 * val2);
-            outfile->Printf("\n  The size-weighted SSQ distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_sum_sq_avg);
+            if (dist_type == "SSQ_AVG") {
+                outfile->Printf("\n  The size-weighted SSQ distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_sum_sq_avg);
+                dist_mat->set(atom_idx_1, atom_idx_2, Dist_sum_sq_avg);
+                g_dist.addEdge(atom_idx_1, atom_idx_2, 1.0 / abs(Dist_sum_sq_avg));
+            }
 
             // Experiments of other metrics
             //outfile->Printf("\n  The S_AB block between atom %d and %d is: \n", atom_idx_1, atom_idx_2);
@@ -216,19 +256,6 @@ void FragmentProjector::build_auto_projector(SharedMatrix F_w) {
             //outfile->Printf("\n  The full overlap between atom %d and %d is: \n", atom_idx_1, atom_idx_2);
             //S_12_f->print();
 
-            SharedMatrix F_12 = F_w->get_block(S1, S2);
-            F_12->scale(-0.5);
-            S_12->add(F_12);
-
-            double Dist_e = S_12->trace();
-            outfile->Printf("\n  The energy-weighted trace distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_e);
-            double Dist_e_avg = Dist_e / std::min(val1, val2);
-            outfile->Printf("\n  The energy-weighted average trace distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_e_avg);
-            double Dist_e_sum_sq = S_12->sum_of_squares();
-            outfile->Printf("\n  The energy-weighted SSQ distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_e_sum_sq);
-            double Dist_e_sum_sq_avg = Dist_sum_sq/(val1 * val2);
-            outfile->Printf("\n  The energy-weighted size-weighted SSQ distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_e_sum_sq);
-
             cum2 += val2;
             atom_idx_2 += 1;
         }
@@ -237,7 +264,12 @@ void FragmentProjector::build_auto_projector(SharedMatrix F_w) {
         atom_idx_1 += 1;
     }
 
-    F_w->print();
+    outfile->Printf("\n The weighted distance matrix: \n");
+    dist_mat->print();
+
+    outfile->Printf("\n Perform single-linkage HAC clustering ...");
+    int inertia = g_dist.kruskalMST(num_clusters);
+    outfile->Printf("\n Done ... \n");
 
     return;
 }

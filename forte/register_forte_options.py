@@ -254,6 +254,21 @@ def register_embedding_options(options):
         "TRUNCATE_MO_SPACE", False,
         "(Internal option, controlled by proc/aset2.py) When building the mo_space_info object from the orbital_embedding.cc,"
         " this option control whether the size of resulting object is A or A+B.")
+    options.add_bool(
+        "AUTOFRAG", False,
+        "Turn on/off automatic fragmentation.")
+    options.add_str("AUTOFRAG_DIST", "SSQ",
+        ["TR", "TR_AVG", "SSQ", "SSQ_AVG"],
+        "The distance metric used in the automatic fragmentation clustering algorithms.")
+    options.add_double(
+        "FOCK_WEIGHT", -0.5, "Weight of the AO Fock matrix in the distance metric (kernal is linear)."
+    )
+    options.add_double(
+        "GEOMETRY_WEIGHT", 0.0, "Weight of the real-space geometry in the distance metric (kernal is 1/r)."
+    )
+    options.add_int(
+        "N_FRAGMENT", 2, "Target number of fragments."
+    )
 
 
 def register_mo_space_info_options(options):
