@@ -192,7 +192,7 @@ void FragmentProjector::build_auto_projector(SharedMatrix F_w, std::shared_ptr<F
     int cum2 = 0;
 
     int natom_full = molecule_->natom();
-    SharedMatrix dist_mat(new Matrix("Atomic distance matrix", natom_full, natom_full));
+    //SharedMatrix dist_mat(new Matrix("Atomic distance matrix", natom_full, natom_full));
 
     Graph g_dist(natom_full, natom_full*natom_full);
     SharedMatrix mol_dist_mat = std::make_shared<psi::Matrix>(molecule_->distance_matrix());
@@ -213,29 +213,30 @@ void FragmentProjector::build_auto_projector(SharedMatrix F_w, std::shared_ptr<F
 
             if (atom_idx_1 != atom_idx_2) {
                 double Dist = S_12->trace();
-                Dist += M_weight * (1.0 / mol_dist_mat->get(atom_idx_1, atom_idx_2));
+                double real_dist = mol_dist_mat->get(atom_idx_1, atom_idx_2);
+                Dist += M_weight * (1.0 / (real_dist * real_dist));
                 if (dist_type == "TR") {
-                    outfile->Printf("\n  The trace distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist);
-                    dist_mat->set(atom_idx_1, atom_idx_2, Dist);
+                    //outfile->Printf("\n  The trace distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist);
+                    //dist_mat->set(atom_idx_1, atom_idx_2, Dist);
                     g_dist.addEdge(atom_idx_1, atom_idx_2, 1.0 / abs(Dist));
                 }
                 double Dist_avg = Dist / std::min(val1, val2);
                 if (dist_type == "TR_AVG") {
-                    outfile->Printf("\n  The average trace distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_avg); 
-                    dist_mat->set(atom_idx_1, atom_idx_2, Dist_avg);
+                    //outfile->Printf("\n  The average trace distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_avg); 
+                    //dist_mat->set(atom_idx_1, atom_idx_2, Dist_avg);
                     g_dist.addEdge(atom_idx_1, atom_idx_2, 1.0 / abs(Dist_avg));
                 }
                 double Dist_sum_sq = S_12->sum_of_squares();
-                Dist_sum_sq += M_weight * (1.0 / mol_dist_mat->get(atom_idx_1, atom_idx_2));
+                Dist_sum_sq += M_weight * (1.0 / (real_dist * real_dist));
                 if (dist_type == "SSQ") {
-                    outfile->Printf("\n  The SSQ distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_sum_sq);
-                    dist_mat->set(atom_idx_1, atom_idx_2, Dist_sum_sq);
+                    //outfile->Printf("\n  The SSQ distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_sum_sq);
+                    //dist_mat->set(atom_idx_1, atom_idx_2, Dist_sum_sq);
                     g_dist.addEdge(atom_idx_1, atom_idx_2, 1.0 / abs(Dist_sum_sq));
                 }
-                double Dist_sum_sq_avg = Dist_sum_sq/(val1 * val2);
-                if (dist_type == "SSQ_AVG") {
-                    outfile->Printf("\n  The size-weighted SSQ distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_sum_sq_avg);
-                    dist_mat->set(atom_idx_1, atom_idx_2, Dist_sum_sq_avg);
+		double Dist_sum_sq_avg = Dist_sum_sq/(val1 * val2);
+		if (dist_type == "SSQ_AVG") {
+                    //outfile->Printf("\n  The size-weighted SSQ distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_sum_sq_avg);
+                    //dist_mat->set(atom_idx_1, atom_idx_2, Dist_sum_sq_avg);
                     g_dist.addEdge(atom_idx_1, atom_idx_2, 1.0 / abs(Dist_sum_sq_avg));
                 }
     
@@ -266,8 +267,8 @@ void FragmentProjector::build_auto_projector(SharedMatrix F_w, std::shared_ptr<F
         atom_idx_1 += 1;
     }
 
-    outfile->Printf("\n The weighted distance matrix: \n");
-    dist_mat->print();
+    //outfile->Printf("\n The weighted distance matrix: \n");
+    //dist_mat->print();
 
     outfile->Printf("\n Perform single-linkage HAC clustering ...");
     int inertia = g_dist.kruskalMST(num_clusters);
