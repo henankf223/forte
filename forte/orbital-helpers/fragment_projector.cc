@@ -153,6 +153,7 @@ void FragmentProjector::build_auto_projector(SharedMatrix F_w, std::shared_ptr<F
     double F_weight = options->get_double("FOCK_WEIGHT");
     double M_weight = options->get_double("GEOMETRY_WEIGHT");
     int num_clusters = options->get_int("N_FRAGMENT");
+    bool enforce_fragment = options->get_bool("FRAGMENT_CONSTRAINED");
 
     outfile->Printf("\n  Computing full overlap distances from S: \n");
     std::vector<int> window_list;
@@ -213,49 +214,30 @@ void FragmentProjector::build_auto_projector(SharedMatrix F_w, std::shared_ptr<F
 
             if (atom_idx_1 != atom_idx_2) {
                 double Dist = S_12->trace();
-                double real_dist = mol_dist_mat->get(atom_idx_1, atom_idx_2);
-                Dist += M_weight * (1.0 / (real_dist * real_dist));
+                double real_dist = mol_dist_mat->get(atom_idx_1, atom_idx_2) * M_weight;
                 if (dist_type == "TR") {
                     //outfile->Printf("\n  The trace distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist);
                     //dist_mat->set(atom_idx_1, atom_idx_2, Dist);
-                    g_dist.addEdge(atom_idx_1, atom_idx_2, 1.0 / abs(Dist));
+                    g_dist.addEdge(atom_idx_1, atom_idx_2, -1.0 * log(abs(Dist)) + real_dist);
                 }
                 double Dist_avg = Dist / std::min(val1, val2);
                 if (dist_type == "TR_AVG") {
                     //outfile->Printf("\n  The average trace distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_avg); 
                     //dist_mat->set(atom_idx_1, atom_idx_2, Dist_avg);
-                    g_dist.addEdge(atom_idx_1, atom_idx_2, 1.0 / abs(Dist_avg));
+                    g_dist.addEdge(atom_idx_1, atom_idx_2, -1.0 * log(abs(Dist_avg)) + real_dist);
                 }
                 double Dist_sum_sq = S_12->sum_of_squares();
-                Dist_sum_sq += M_weight * (1.0 / (real_dist * real_dist));
                 if (dist_type == "SSQ") {
                     //outfile->Printf("\n  The SSQ distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_sum_sq);
                     //dist_mat->set(atom_idx_1, atom_idx_2, Dist_sum_sq);
-                    g_dist.addEdge(atom_idx_1, atom_idx_2, 1.0 / abs(Dist_sum_sq));
+                    g_dist.addEdge(atom_idx_1, atom_idx_2, -1.0 * log(sqrt(abs(Dist_sum_sq))) + real_dist);
                 }
 		double Dist_sum_sq_avg = Dist_sum_sq/(val1 * val2);
 		if (dist_type == "SSQ_AVG") {
                     //outfile->Printf("\n  The size-weighted SSQ distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist_sum_sq_avg);
                     //dist_mat->set(atom_idx_1, atom_idx_2, Dist_sum_sq_avg);
-                    g_dist.addEdge(atom_idx_1, atom_idx_2, 1.0 / abs(Dist_sum_sq_avg));
+                    g_dist.addEdge(atom_idx_1, atom_idx_2, -1.0 * log(sqrt(abs(Dist_sum_sq_avg))) + real_dist);
                 }
-    
-                // Experiments of other metrics
-                //outfile->Printf("\n  The S_AB block between atom %d and %d is: \n", atom_idx_1, atom_idx_2);
-                //S_12->print();
-    
-                //int size_reduced;
-                //SharedMatrix S_12_inv = S_12->pseudoinverse(1e-5, size_reduced);
-                //outfile->Printf("\n  The (S_AB)^-1 block between atom %d and %d is: \n", atom_idx_1, atom_idx_2);
-                //S_12_inv->print();
-    
-                //SharedMatrix S_12_f(new Matrix("S system in fullsize", nbf_, nbf_));
-                //S_12_f->set_block(S1, S2, S_12_inv);
-                //S_12_f->transform(S_);
-    
-                //outfile->Printf("\n  The full overlap between atom %d and %d is: \n", atom_idx_1, atom_idx_2);
-                //S_12_f->print();
-
             }
 
             cum2 += val2;
@@ -271,7 +253,15 @@ void FragmentProjector::build_auto_projector(SharedMatrix F_w, std::shared_ptr<F
     //dist_mat->print();
 
     outfile->Printf("\n Perform single-linkage HAC clustering ...");
-    int inertia = g_dist.kruskalMST(num_clusters);
+    std::vector<int> enforce_list;
+    if (enforce_fragment) {
+        outfile->Printf("\n Linking %d atoms in the original fragment ...", natom_A_);
+        for (int i = 0; i < natom_A_; ++i) { 
+            enforce_list.push_back(i);
+            outfile->Printf("\n Adding atom %d to fix list", i);
+        }
+    }
+    std::unordered_map<int, std::vector<int>> res = g_dist.kruskalMST(num_clusters, enforce_list, window_list);
     outfile->Printf("\n Done ... \n");
 
     return;

@@ -269,6 +269,9 @@ def register_embedding_options(options):
     options.add_int(
         "N_FRAGMENT", 2, "Target number of fragments."
     )
+    options.add_bool(
+        "FRAGMENT_CONSTRAINED", True, "Constrain the fragment into a single cluster (True), or partition it (False). "
+    )
 
 
 def register_mo_space_info_options(options):

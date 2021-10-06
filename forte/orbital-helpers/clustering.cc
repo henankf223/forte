@@ -13,13 +13,13 @@
 #include "psi4/libpsio/psio.hpp"
 
 // Creating shortcut for an integer pair
-typedef  std::pair<int, int> iPair;
+// typedef  std::pair<int, int> iPair;
 
-// Structure to represent a graph
+// Graph
 struct Graph
 {
     int V, E;
-    std::vector<std::pair<double, iPair>> edges;
+    std::vector<std::pair<double, std::pair<int, int>>> edges;
 
     // Constructor
     Graph(int V, int E)
@@ -36,40 +36,35 @@ struct Graph
 
     // Function to find MST using Kruskal's
     // MST algorithm
-    double kruskalMST(int n_c);
+    std::unordered_map<int, std::vector<int>> kruskalMST(int n_c, std::vector<int> enforce, std::vector<int> window);
 };
 
-// To represent Disjoint Sets
-struct DisjointSets
+// Union-Find data structure for clustering
+struct UnionFind
 {
-    int *parent, *rnk;
-    int n;
+    int *parent, *rank;
+    int n, count;
 
-    // Constructor.
-    DisjointSets(int n)
+    // Constructor
+    UnionFind(int n)
     {
         // Allocate memory
         this->n = n;
+        this->count = n;
         parent = new int[n+1];
-        rnk = new int[n+1];
+        rank = new int[n+1];
 
-        // Initially, all vertices are in
-        // different sets and have rank 0.
+        // Initialize all entries
         for (int i = 0; i <= n; i++)
         {
-            rnk[i] = 0;
-
-            //every element is parent of itself
+            rank[i] = 0;
             parent[i] = i;
         }
     }
 
-    // Find the parent of a node 'u'
-    // Path Compression
+    // Find parent of u, with recurrsive path compression
     int find(int u)
     {
-        /* Make the parent of the nodes in the path
-           from u--> parent[u] point to parent[u] */
         if (u != parent[u])
             parent[u] = find(parent[u]);
         return parent[u];
@@ -80,26 +75,20 @@ struct DisjointSets
     {
         x = find(x), y = find(y);
 
-        /* Make tree with smaller height
-           a subtree of the other tree  */
-        if (rnk[x] > rnk[y])
+        if (rank[x] > rank[y])
             parent[y] = x;
-        else // If rnk[x] <= rnk[y]
+        else 
             parent[x] = y;
 
-        if (rnk[x] == rnk[y])
-            rnk[y]++;
+        if (rank[x] == rank[y])
+            rank[y]++;
+        count--;
     }
 
     // Check number of sets
     int count_set()
     {
-        std::unordered_map<int, bool> clusters;
-        for (int i = 0; i < n; ++i)
-        {
-            clusters[find(i)] = true;
-        }
-        return clusters.size();
+        return count;
     }
 
     // Print all clusters
@@ -113,25 +102,37 @@ struct DisjointSets
     }
 };
 
-double Graph::kruskalMST(int n_c)
+std::unordered_map<int, std::vector<int>> Graph::kruskalMST(int n_c, std::vector<int> enforce, std::vector<int> window)
 {
-    double mst_wt = 0.0; // Initialize result
+    double mst_wt = 0.0;
 
     // Sort edges in increasing order on basis of cost
     sort(edges.begin(), edges.end());
 
-    // Create disjoint sets
-    DisjointSets ds(V);
+    // Create UnionFind
+    UnionFind uf(V);
+
+    // Merge enforced elements
+    if (enforce.size() > 0) {
+        for(int k : enforce) {
+            if (k != enforce[0]) {
+                uf.merge(k, enforce[0]);
+            }
+        }
+    }
+
+    // Create a map to memorize whether an edge is in MST
+    std::unordered_map<int, double> IsMST;
 
     // Iterate through all sorted edges
-    std::vector< std::pair<double, iPair> >::iterator it;
+    std::vector< std::pair<double, std::pair<int, int>> >::iterator it;
     for (it=edges.begin(); it!=edges.end(); it++)
     {
         int u = it->second.first;
         int v = it->second.second;
 
-        int set_u = ds.find(u);
-        int set_v = ds.find(v);
+        int set_u = uf.find(u);
+        int set_v = uf.find(v);
 
         // Check if the selected edge is creating
         // a cycle or not (Cycle is created if u
@@ -139,22 +140,83 @@ double Graph::kruskalMST(int n_c)
         if (set_u != set_v)
         {
             // Current edge will be in the MST
-            // so print it
-            //cout << u << " - " << v << endl;
 
             // Update MST weight
             mst_wt += it->first;
 
             // Merge two sets
-            ds.merge(set_u, set_v);
-        }
-        int n_curr = ds.count_set();
-        if (n_curr == n_c) { break; }
-    }
-    ds.print_clusters();
-    psi::outfile->Printf("\n The total inertia is %8.8f. \n ", mst_wt);
+            uf.merge(set_u, set_v);
 
-    return mst_wt;
+            IsMST[u*V + v] = it->first;
+        }
+        int n_curr = uf.count_set();
+        if (n_curr == n_c) { break; }
+        // TODO: save the pointer here
+    }
+    //uf.print_clusters();
+    std::unordered_map<int, int> index_list;
+    std::unordered_map<int, std::vector<int>> cluster_list;
+
+    for (int i = 0; i < V; ++i) {
+        cluster_list[uf.find(i)].push_back(i);
+    }
+
+    if (enforce.size() > 0) { 
+        index_list[0] = uf.find(enforce[0]);
+        psi::outfile->Printf("\n The fragment atoms defined in input will be constrained in cluster 0. \n");
+        int mask = 1;
+        for (auto c : cluster_list) {
+            if (c.first ==  uf.find(enforce[0])) { continue; }
+            else {
+                index_list[mask] = c.first;
+                mask++;
+            }
+        }
+    }
+    else {
+        int mask = 0;
+        for (auto c : cluster_list) {
+            index_list[mask] = c.first;
+            mask++;
+        }
+    }
+
+    std::unordered_map<int, std::vector<int>> final_cluster;
+
+    psi::outfile->Printf("\n =============== Summary of clustering ===============");
+
+    for (auto val : index_list) {
+        int idx = val.first;
+        int centroid = val.second;
+        double mst_c = 0.0;
+        int size_c = 0;
+        int window_budget = 0;
+        psi::outfile->Printf("\n Cluster %d (centroid %d):  ", idx, centroid);
+        for (int at : cluster_list[centroid]) {
+            psi::outfile->Printf(" %d", at);
+            window_budget += window[at];
+        }
+        psi::outfile->Printf(" \n");
+        final_cluster[idx] = cluster_list[centroid];
+        for (int m : final_cluster[idx]) {
+            for (int n : final_cluster[idx]) {
+                int idx_c = m * V + n;
+                if (IsMST.find(idx_c) != IsMST.end()) {
+                    mst_c += IsMST[idx_c];
+                    size_c++;
+                }
+            }
+        }
+        // TODO: if any combination of clusters have NOA smaller than max_budget, merge them
+        psi::outfile->Printf("Size: %d; Single cluster inertia: %8.8f, cluster basis size: %d. \n", size_c + 1, mst_c / size_c, window_budget);
+    }
+
+    int n_cluster = uf.count_set();
+    double inertia = mst_wt / (V - n_cluster);
+    psi::outfile->Printf("\n The total number of clusters is %d, total inertia is %8.8f. \n ", n_cluster, inertia);
+    psi::outfile->Printf("\n ======================================================");
+
+    return final_cluster;
 }
 
 
