@@ -57,7 +57,7 @@ class FragmentProjector {
     // std::shared_ptr<BasisSet> minao_basis, 	std::shared_ptr<BasisSet> prime_basis);
 
     // Build projector and return AO basis matrix Pf_AO
-    psi::SharedMatrix build_f_projector(std::shared_ptr<psi::BasisSet> basis);
+    psi::SharedMatrix build_f_projector(std::shared_ptr<psi::BasisSet> basis, std::shared_ptr<ForteOptions> options);
 
     // Build distance metric using weighted overlap
     void build_auto_projector(psi::SharedMatrix F_w, std::shared_ptr<ForteOptions> options);

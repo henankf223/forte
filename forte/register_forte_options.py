@@ -272,6 +272,13 @@ def register_embedding_options(options):
     options.add_bool(
         "FRAGMENT_CONSTRAINED", True, "Constrain the fragment into a single cluster (True), or partition it (False). "
     )
+    options.add_int_list("ADD_FRAG_BASIS", "Basis set indices for the fragment (A).")
+    options.add_bool(
+        "PURE_BASIS_PARTITION", False, "Use only the input basis indices for fragment partitioning. "
+    )
+    options.add_bool("USE_CUSTOM_WINDOW", False, "Use a custom list of basis (instead of atoms) indices for the fragmentation.")
+    options.add_int_list("CUSTOM_FRAG_WINDOW", "A list of basis indices compositions (instead of atoms) for the fragmentation.")
+    
 
 
 def register_mo_space_info_options(options):

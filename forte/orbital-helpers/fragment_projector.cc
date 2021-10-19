@@ -72,7 +72,7 @@ std::pair<psi::SharedMatrix, int> make_fragment_projector(SharedWavefunction wfn
     // IAO procedure FragmentProjector FP(molecule, prime_basis, minao_basis);
 
     // Compute and return the projector matrix
-    psi::SharedMatrix Pf = FP.build_f_projector(prime_basis);
+    psi::SharedMatrix Pf = FP.build_f_projector(prime_basis, options);
 
     if (options->get_bool("AUTOFRAG")) {
         // Apply automatic fragmentation
@@ -119,28 +119,60 @@ void FragmentProjector::startup() {
     nbf_A_ = count_basis;
 }
 
-SharedMatrix FragmentProjector::build_f_projector(std::shared_ptr<psi::BasisSet> basis) {
-
-    std::vector<int> zeropi(1, 0);
-    Dimension A_begin(zeropi);
-    Dimension A_end(zeropi);
-    A_begin[0] = 0;
-    A_end[0] = nbf_A_;
+SharedMatrix FragmentProjector::build_f_projector(std::shared_ptr<psi::BasisSet> basis, std::shared_ptr<ForteOptions> options) {
 
     std::shared_ptr<IntegralFactory> integral_pp(new IntegralFactory(basis, basis, basis, basis));
     std::shared_ptr<OneBodyAOInt> S_int(integral_pp->ao_overlap());
     S_ = std::make_shared<psi::Matrix>("S_nn", nbf_, nbf_);
     S_int->compute(S_);
 
-    Slice fragA(A_begin, A_end);
+    std::vector<int> add_basis = options->get_int_list("ADD_FRAG_BASIS");
+    std::vector<int> basis_vec;
 
+    if (options->get_bool("PURE_BASIS_PARTITION")) {
+        outfile->Printf("\n Ignore the fragment and use pure basis set input as A. \n");
+        nbf_A_ = 0;
+    }
+
+    for (int i = 0; i < nbf_A_; ++i) {
+        basis_vec.push_back(i);
+    }
+    outfile->Printf("\n Will add %d basis to the fragment.", add_basis.size());
+    for (int v : add_basis) {
+        if (v < nbf_A_ || v >= nbf_) {
+            outfile->Printf("\n Warning! Illegal basis number (%d) ! Check the input.", v);
+        }
+        else {
+            outfile->Printf("\n Add basis %d to the fragment projector", v);
+            basis_vec.push_back(v);
+        }
+    }
+    nbf_A_ = basis_vec.size();
+
+    if (nbf_A_ == 0) {
+        throw PSIEXCEPTION("The fragment size is 0! Use ADD_FRAG_BASIS to assign fragment basis, or turn off PURE_BASIS_PARTITION.");
+    }
+
+    int nbf_new = basis_vec.size();
     // Construct the system portion of S (S_A)
-    SharedMatrix S_A = S_->get_block(fragA, fragA);
+    //SharedMatrix S_A = S_->get_block(fragA, fragA);
+    SharedMatrix S_A(new Matrix("S_A block", nbf_new, nbf_new));
+    for (int m = 0; m < nbf_new; ++m) {
+        for (int n = 0; n < nbf_new; ++n) {
+            S_A->set(m, n, S_->get(basis_vec[m], basis_vec[n]));
+        }
+    }
 
     // Construct S_A^-1 and store it in a matrix of size nbf x nbf
     S_A->general_invert();
+
     SharedMatrix S_A_nn(new Matrix("S system in fullsize", nbf_, nbf_));
-    S_A_nn->set_block(fragA, fragA, S_A);
+    //S_A_nn->set_block(fragA, fragA, S_A);
+    for (int p = 0; p < nbf_new; ++p) {
+        for (int q = 0; q < nbf_new; ++q) {
+            S_A_nn->set(basis_vec[p], basis_vec[q], S_A->get(p, q));
+        }
+    }
 
     // Evaluate AO basis projector  P = S^T (S_A)^{-1} S
     S_A_nn->transform(S_);
@@ -154,28 +186,37 @@ void FragmentProjector::build_auto_projector(SharedMatrix F_w, std::shared_ptr<F
     double M_weight = options->get_double("GEOMETRY_WEIGHT");
     int num_clusters = options->get_int("N_FRAGMENT");
     bool enforce_fragment = options->get_bool("FRAGMENT_CONSTRAINED");
+    bool use_custom = options->get_bool("CUSTOM_FRAG_WINDOW");
 
     outfile->Printf("\n  Computing full overlap distances from S: \n");
-    std::vector<int> window_list;
-    int atom_window_count = 0;
-    int atom_idx = 0;
-    for (int ka = 0; ka < nbf_; ka++) {
-        int A = basis_->function_to_center(ka);
-        if (A == atom_idx) {
-            atom_window_count += 1;
-        }
-        else {
-            window_list.push_back(atom_window_count);
-            atom_idx += 1;
-            atom_window_count = 1;
-        }
-    }
-    window_list.push_back(atom_window_count);
 
-    outfile->Printf("\n  The atom windows are: \n");
+    std::vector<int> window_list;
+    int atom_idx = 0;
+    if (!use_custom) {
+        outfile->Printf("\n  The partition will be based on basis located on every atoms. \n");
+        int atom_window_count = 0;
+        for (int ka = 0; ka < nbf_; ka++) {
+            int A = basis_->function_to_center(ka);
+            if (A == atom_idx) {
+                atom_window_count += 1;
+            }
+            else {
+                window_list.push_back(atom_window_count);
+                atom_idx += 1;
+                atom_window_count = 1;
+            }
+        }
+        window_list.push_back(atom_window_count);
+    }
+    else {
+        outfile->Printf("\n  The partition will be based on input basis indices from CUSTOM_FRAG_WINDOW. \n");
+        window_list = options->get_int_list("CUSTOM_FRAG_WINDOW");
+    }
+
+    outfile->Printf("\n  The atom/composite windows are: \n");
     atom_idx = 0;
     for (auto val : window_list) {
-        outfile->Printf("\n Atom %d have %d AO on it.", atom_idx, val);
+        outfile->Printf("\n Atom/composite %d have %d AO on it.", atom_idx, val);
         atom_idx += 1;
     }
     outfile->Printf("\n");
