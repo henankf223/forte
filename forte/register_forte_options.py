@@ -278,6 +278,7 @@ def register_embedding_options(options):
     )
     options.add_bool("USE_CUSTOM_WINDOW", False, "Use a custom list of basis (instead of atoms) indices for the fragmentation.")
     options.add_int_list("CUSTOM_FRAG_WINDOW", "A list of basis indices compositions (instead of atoms) for the fragmentation.")
+    options.add_bool("EMBEDDING_ROTATION", True, "Whether we rotate the MOs in the embedding partition.")
     
 
 

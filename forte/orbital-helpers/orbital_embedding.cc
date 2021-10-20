@@ -560,6 +560,12 @@ std::shared_ptr<MOSpaceInfo> make_embedding(psi::SharedWavefunction ref_wfn,
     SharedMatrix P_vv = Pf->get_block(vir, vir);
     P_vv->diagonalize(Uv, lv, descending);
 
+    if (!options->get_bool("EMBEDDING_ROTATION")) {
+        outfile->Printf("\n  Orbitals will not be rotated, the embedding partition will only sort the MOs.");
+        Uo->identity();
+        Uv->identity();
+    }
+
     SharedMatrix U_all(new Matrix("U with Pab", nirrep, nmopi, nmopi));
     U_all->set_block(occ, occ, Uo);
     U_all->set_block(vir, vir, Uv);

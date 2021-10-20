@@ -186,7 +186,7 @@ void FragmentProjector::build_auto_projector(SharedMatrix F_w, std::shared_ptr<F
     double M_weight = options->get_double("GEOMETRY_WEIGHT");
     int num_clusters = options->get_int("N_FRAGMENT");
     bool enforce_fragment = options->get_bool("FRAGMENT_CONSTRAINED");
-    bool use_custom = options->get_bool("CUSTOM_FRAG_WINDOW");
+    bool use_custom = options->get_bool("USE_CUSTOM_WINDOW");
 
     outfile->Printf("\n  Computing full overlap distances from S: \n");
 
@@ -210,7 +210,9 @@ void FragmentProjector::build_auto_projector(SharedMatrix F_w, std::shared_ptr<F
     }
     else {
         outfile->Printf("\n  The partition will be based on input basis indices from CUSTOM_FRAG_WINDOW. \n");
-        window_list = options->get_int_list("CUSTOM_FRAG_WINDOW");
+        auto window_list = options->get_int_list("CUSTOM_FRAG_WINDOW");
+        outfile->Printf("\n  The window size is: %d \n", window_list.size());
+        outfile->Printf("\n  The atom/composite windows are: \n");
     }
 
     outfile->Printf("\n  The atom/composite windows are: \n");
