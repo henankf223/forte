@@ -272,7 +272,7 @@ def register_embedding_options(options):
     options.add_bool(
         "FRAGMENT_CONSTRAINED", True, "Constrain the fragment into a single cluster (True), or partition it (False). "
     )
-    options.add_int_list("ADD_FRAG_BASIS", "Basis set indices for the fragment (A).")
+    options.add_int_list("EMBEDDING_CUSTOM_PARTITION", "Basis set indices for the fragment (A).")
     options.add_bool(
         "PURE_BASIS_PARTITION", False, "Use only the input basis indices for fragment partitioning. "
     )

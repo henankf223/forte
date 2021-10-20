@@ -126,7 +126,7 @@ SharedMatrix FragmentProjector::build_f_projector(std::shared_ptr<psi::BasisSet>
     S_ = std::make_shared<psi::Matrix>("S_nn", nbf_, nbf_);
     S_int->compute(S_);
 
-    std::vector<int> add_basis = options->get_int_list("ADD_FRAG_BASIS");
+    std::vector<int> add_basis = options->get_int_list("EMBEDDING_CUSTOM_PARTITION");
     std::vector<int> basis_vec;
 
     if (options->get_bool("PURE_BASIS_PARTITION")) {
@@ -210,13 +210,14 @@ void FragmentProjector::build_auto_projector(SharedMatrix F_w, std::shared_ptr<F
     }
     else {
         outfile->Printf("\n  The partition will be based on input basis indices from CUSTOM_FRAG_WINDOW. \n");
-        auto window_list = options->get_int_list("CUSTOM_FRAG_WINDOW");
+        window_list = options->get_int_list("CUSTOM_FRAG_WINDOW");
         outfile->Printf("\n  The window size is: %d \n", window_list.size());
-        outfile->Printf("\n  The atom/composite windows are: \n");
+        outfile->Printf("\n  The first window is: %d \n", window_list[0]);
     }
 
     outfile->Printf("\n  The atom/composite windows are: \n");
     atom_idx = 0;
+    outfile->Printf("\n  The window count is: %d \n", window_list.size());
     for (auto val : window_list) {
         outfile->Printf("\n Atom/composite %d have %d AO on it.", atom_idx, val);
         atom_idx += 1;
@@ -235,11 +236,11 @@ void FragmentProjector::build_auto_projector(SharedMatrix F_w, std::shared_ptr<F
     int cum1 = 0;
     int cum2 = 0;
 
-    int natom_full = molecule_->natom();
+    int natom_full = window_list.size();
     //SharedMatrix dist_mat(new Matrix("Atomic distance matrix", natom_full, natom_full));
 
     Graph g_dist(natom_full, natom_full*natom_full);
-    SharedMatrix mol_dist_mat = std::make_shared<psi::Matrix>(molecule_->distance_matrix());
+    //SharedMatrix mol_dist_mat = std::make_shared<psi::Matrix>(molecule_->distance_matrix());
 
     for (auto val1 : window_list) {
         S1_begin[0] = cum1;
@@ -257,7 +258,8 @@ void FragmentProjector::build_auto_projector(SharedMatrix F_w, std::shared_ptr<F
 
             if (atom_idx_1 != atom_idx_2) {
                 double Dist = S_12->trace();
-                double real_dist = mol_dist_mat->get(atom_idx_1, atom_idx_2) * M_weight;
+                //double real_dist = mol_dist_mat->get(atom_idx_1, atom_idx_2) * M_weight;
+                double real_dist = 0.0;
                 if (dist_type == "TR") {
                     //outfile->Printf("\n  The trace distances between atom %d and %d is %8.8f: \n", atom_idx_1, atom_idx_2, Dist);
                     //dist_mat->set(atom_idx_1, atom_idx_2, Dist);
